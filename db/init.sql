@@ -1,16 +1,6 @@
 -- MySQL 데이터 볼륨이 비어 있을 때 최초 한 번 실행됩니다.
 SET NAMES utf8mb4;
 
-CREATE DATABASE IF NOT EXISTS frodo
-    CHARACTER SET utf8mb4
-    COLLATE utf8mb4_unicode_ci;
-
-CREATE USER IF NOT EXISTS 'frodo'@'%' IDENTIFIED BY 'CHANGE_ME_MYSQL_APP_PASSWORD';
-ALTER USER 'frodo'@'%' IDENTIFIED BY 'CHANGE_ME_MYSQL_APP_PASSWORD';
-GRANT ALL PRIVILEGES ON frodo.* TO 'frodo'@'%';
-
-USE frodo;
-
 CREATE TABLE IF NOT EXISTS accounts (
     id INT NOT NULL AUTO_INCREMENT,
     username VARCHAR(80) NOT NULL,
