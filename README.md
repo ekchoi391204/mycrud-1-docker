@@ -46,6 +46,8 @@ crud-4-1-docker/
 │   ├── Dockerfile
 │   ├── nginx.conf
 │   └── package.json
+├── work/
+│   └── docker-compose.yml
 └── README.md
 ```
 
@@ -53,14 +55,8 @@ crud-4-1-docker/
 
 - Docker가 설치되어 있고 실행 중이어야 합니다.
 - 모든 명령은 프로젝트 루트인 `crud-4-1-docker`에서 실행합니다.
-- DB와 API는 동일한 `app/.env` 파일의 환경변수를 사용합니다.
-- `app/.env`의 `CHANGE_ME_*` 값을 실제 운영 비밀번호로 변경합니다.
-
-`app/.env`가 없다면 예제 파일을 복사한 후 값을 수정합니다.
-
-```bash
-cp app/.env.example app/.env
-```
+- DB와 API 실행 명령의 `MYSQL_PASSWORD`는 같은 값으로 설정해야 합니다.
+- 실행 명령에 있는 `CHANGE_ME_*` 값을 실제 운영 비밀번호로 변경합니다.
 
 ## 1. Docker 이미지 빌드
 
@@ -129,11 +125,13 @@ docker network inspect mynet
 
 ## 4. DB 실행
 
-DB를 가장 먼저 실행합니다. MySQL 환경변수는 `app/.env`에서 읽으며,
-DB 데이터는 `mycrud-1-db-data` 볼륨에 저장됩니다.
+DB를 가장 먼저 실행합니다. MySQL 환경변수는 `-e` 옵션으로 직접 전달하며,
+DB 데이터는 `mycrud-1-db-data` 볼륨에 저장됩니다. 아래의
+`CHANGE_ME_MYSQL_ROOT_PASSWORD`와 `CHANGE_ME_MYSQL_APP_PASSWORD`를 실제
+비밀번호로 변경해서 실행합니다.
 
 ```bash
-docker run -d --name mycrud-db --restart unless-stopped --network mynet --network-alias db.cloud.local --env-file ./app/.env -v mycrud-1-db-data:/var/lib/mysql hifrodo/mycrud-1-db:1.0
+docker run -d --name mycrud-db --restart unless-stopped --network mynet --network-alias db.cloud.local -e MYSQL_ROOT_PASSWORD=CHANGE_ME_MYSQL_ROOT_PASSWORD -e MYSQL_DATABASE=frodo -e MYSQL_USER=frodo -e MYSQL_PASSWORD=CHANGE_ME_MYSQL_APP_PASSWORD -v mycrud-1-db-data:/var/lib/mysql hifrodo/mycrud-1-db:1.0
 ```
 
 빈 DB 볼륨으로 최초 실행하면 MySQL 이미지가 전달된 환경변수로 `frodo`
@@ -169,12 +167,13 @@ docker exec mycrud-redis redis-cli ping
 
 ## 6. API 실행
 
-DB와 Redis가 준비된 다음 API를 실행합니다. API도 DB와 동일한
-`app/.env`에서 환경변수를 읽고 `db.cloud.local`, `redis.cloud.local`로
-내부 서비스에 연결합니다.
+DB와 Redis가 준비된 다음 API를 실행합니다. API 환경변수는 `-e` 옵션으로
+직접 전달하며 `db.cloud.local`, `redis.cloud.local`로 내부 서비스에
+연결합니다. `CHANGE_ME_ADMIN_PASSWORD`와
+`CHANGE_ME_MYSQL_APP_PASSWORD`를 실제 비밀번호로 변경해서 실행합니다.
 
 ```bash
-docker run -d --name mycrud-api --restart unless-stopped --network mynet --network-alias api.cloud.local --env-file ./app/.env -p 8000:8000 hifrodo/mycrud-1-api:1.0
+docker run -d --name mycrud-api --restart unless-stopped --network mynet --network-alias api.cloud.local -e SERVER_NAME=api.cloud.local -e CORS_ORIGINS=http://localhost -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=CHANGE_ME_ADMIN_PASSWORD -e MYSQL_HOST=db.cloud.local -e MYSQL_PORT=3306 -e MYSQL_DATABASE=frodo -e MYSQL_USER=frodo -e MYSQL_PASSWORD=CHANGE_ME_MYSQL_APP_PASSWORD -e REDIS_HOST=redis.cloud.local -e REDIS_PORT=6379 -e REDIS_DATABASE=0 -p 8000:8000 hifrodo/mycrud-1-api:1.0
 ```
 
 API 로그와 상태를 확인합니다.
@@ -199,6 +198,74 @@ docker run -d --name mycrud-front --restart unless-stopped --network mynet -p 80
 
 ```text
 http://localhost
+```
+
+## 8. Docker Compose로 배포
+
+개별 `docker run` 명령으로 실행한 기존 컨테이너를 제거한 뒤
+`work/docker-compose.yml`로 전체 서비스를 배포할 수 있습니다.
+
+### 기존 컨테이너 제거
+
+다음 명령은 현재 Docker 호스트에서 실행 중인 **모든 컨테이너를 강제로
+삭제**합니다. 이 프로젝트 외의 컨테이너도 삭제되므로 전용 EC2 또는 삭제
+대상을 확인한 환경에서만 실행합니다.
+
+```bash
+docker ps
+docker rm -f $(docker ps -q)
+```
+
+중지된 컨테이너까지 포함하여 호스트의 모든 컨테이너를 삭제하려면 다음
+명령을 사용합니다.
+
+```bash
+docker rm -f $(docker ps -aq)
+```
+
+다른 컨테이너를 유지하고 이 프로젝트의 기존 컨테이너만 삭제하려면 다음
+명령을 사용합니다.
+
+```bash
+docker rm -f mycrud-front mycrud-api mycrud-redis mycrud-db
+```
+
+컨테이너를 삭제해도 `mycrud-1-db-data`, `mycrud-1-redis-data` named volume은
+삭제되지 않으므로 기존 데이터는 유지됩니다.
+
+### Compose 실행
+
+프로젝트 루트에서 `app/.env`의 운영 환경 값을 확인한 뒤 `work` 디렉터리로
+이동합니다.
+
+```bash
+cd work
+```
+
+Docker Hub에서 최신 이미지를 받은 뒤 서비스를 백그라운드로 실행합니다.
+
+```bash
+docker-compose.exe pull
+docker-compose.exe up -d
+```
+
+Compose는 별도의 `mycrud-network` 네트워크를 자동 생성하고 DB와 Redis의
+헬스체크가 통과한 뒤 API, Front 순으로 시작합니다.
+
+실행 상태와 로그를 확인합니다.
+
+```bash
+docker-compose.exe ps
+docker-compose.exe logs -f
+```
+
+브라우저에서 `http://localhost` 또는 EC2의 공인 IP로 접속합니다.
+
+Compose 서비스를 중지하고 컨테이너 및 `mycrud-network`를 제거하려면 다음
+명령을 실행합니다. named volume의 데이터는 유지됩니다.
+
+```bash
+docker-compose.exe down
 ```
 
 ## 실행 상태와 로그 확인
@@ -248,7 +315,7 @@ API를 변경한 경우 다음과 같이 실행합니다.
 docker build -t hifrodo/mycrud-1-api:1.0 ./app
 docker stop mycrud-api
 docker rm mycrud-api
-docker run -d --name mycrud-api --restart unless-stopped --network mynet --network-alias api.cloud.local --env-file ./app/.env -p 8000:8000 hifrodo/mycrud-1-api:1.0
+docker run -d --name mycrud-api --restart unless-stopped --network mynet --network-alias api.cloud.local -e SERVER_NAME=api.cloud.local -e CORS_ORIGINS=http://localhost -e ADMIN_USERNAME=admin -e ADMIN_PASSWORD=CHANGE_ME_ADMIN_PASSWORD -e MYSQL_HOST=db.cloud.local -e MYSQL_PORT=3306 -e MYSQL_DATABASE=frodo -e MYSQL_USER=frodo -e MYSQL_PASSWORD=CHANGE_ME_MYSQL_APP_PASSWORD -e REDIS_HOST=redis.cloud.local -e REDIS_PORT=6379 -e REDIS_DATABASE=0 -p 8000:8000 hifrodo/mycrud-1-api:1.0
 ```
 
 ## 데이터 보존
