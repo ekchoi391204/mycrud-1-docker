@@ -53,9 +53,8 @@ crud-4-1-docker/
 
 - Docker가 설치되어 있고 실행 중이어야 합니다.
 - 모든 명령은 프로젝트 루트인 `crud-4-1-docker`에서 실행합니다.
-- `app/.env`의 비밀번호와 운영 환경 값을 확인합니다.
-- `app/.env`의 `MYSQL_PASSWORD`는 `db/init.sql`의 `frodo` 사용자
-  비밀번호와 같아야 합니다.
+- DB와 API는 동일한 `app/.env` 파일의 환경변수를 사용합니다.
+- `app/.env`의 `CHANGE_ME_*` 값을 실제 운영 비밀번호로 변경합니다.
 
 `app/.env`가 없다면 예제 파일을 복사한 후 값을 수정합니다.
 
@@ -130,18 +129,17 @@ docker network inspect mynet
 
 ## 4. DB 실행
 
-DB를 가장 먼저 실행합니다. `app/.env`의 MySQL 환경변수를 사용하며,
+DB를 가장 먼저 실행합니다. MySQL 환경변수는 `app/.env`에서 읽으며,
 DB 데이터는 `mycrud-1-db-data` 볼륨에 저장됩니다.
 
 ```bash
 docker run -d --name mycrud-db --restart unless-stopped --network mynet --network-alias db.cloud.local --env-file ./app/.env -v mycrud-1-db-data:/var/lib/mysql hifrodo/mycrud-1-db:1.0
 ```
 
-빈 DB 볼륨으로 최초 실행할 때 `db/init.sql`이 자동 실행되어 다음 항목을
-생성합니다.
+빈 DB 볼륨으로 최초 실행하면 MySQL 이미지가 전달된 환경변수로 `frodo`
+데이터베이스와 사용자를 생성합니다. 이후 `db/init.sql`이 자동 실행되어
+다음 항목을 생성합니다.
 
-- `frodo` 데이터베이스
-- `frodo` 사용자와 권한
 - `accounts`, `people` 테이블
 - `people` 초기 데이터
 
@@ -171,8 +169,9 @@ docker exec mycrud-redis redis-cli ping
 
 ## 6. API 실행
 
-DB와 Redis가 준비된 다음 API를 실행합니다. API는 `app/.env`에서 설정을
-읽고 `db.cloud.local`, `redis.cloud.local`로 내부 서비스에 연결합니다.
+DB와 Redis가 준비된 다음 API를 실행합니다. API도 DB와 동일한
+`app/.env`에서 환경변수를 읽고 `db.cloud.local`, `redis.cloud.local`로
+내부 서비스에 연결합니다.
 
 ```bash
 docker run -d --name mycrud-api --restart unless-stopped --network mynet --network-alias api.cloud.local --env-file ./app/.env -p 8000:8000 hifrodo/mycrud-1-api:1.0
