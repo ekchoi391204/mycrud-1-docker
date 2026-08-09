@@ -1,0 +1,81 @@
+services:
+  db:
+    image: hifrodo/mycrud-1-db:1.0
+    container_name: mycrud-db
+    restart: unless-stopped
+    env_file:
+      - ../app/.env
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      mycrud-network:
+        aliases:
+          - db.cloud.local
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: hifrodo/mycrud-1-redis:1.0
+    container_name: mycrud-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      mycrud-network:
+        aliases:
+          - redis.cloud.local
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: hifrodo/mycrud-1-api:1.0
+    container_name: mycrud-api
+    restart: unless-stopped
+    env_file:
+      - ../app/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      mycrud-network:
+        aliases:
+          - api.cloud.local
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  front:
+    image: hifrodo/mycrud-1-front:1.0
+    container_name: mycrud-front
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - mycrud-network
+
+volumes:
+  db-data:
+    name: mycrud-1-db-data
+  redis-data:
+    name: mycrud-1-redis-data
+
+networks:
+  mycrud-network:
+    name: mycrud-network
